@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DashBoard</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+    <script src="static/js/jquery-3.1.1.min.js"></script>
+    <script src="static/js/highcharts.js"></script>
+    <script src="static/js/exporting.js"></script>
+    <script type="text/javascript" charset="utf-8">
+    var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+    var dataArr = [];
+    window.chart = null;
+
+    socket.on('connect', function() {
+        socket.emit('test_connect', {data: 'I\'m connected!'});
+        console.log('connected!');
+    });
+
+    socket.on('test_message', function(data){
+        // 检查数据
+        if (!data.trade_date || !data.MA5 || !data.MA10) {
+            console.error('数据格式有误', data);
+            return;
+        }
+        dataArr.push({
+            trade_date: data.trade_date,
+            MA5: data.MA5,
+            MA10: data.MA10,
+            DIF: data.DIF,
+            DEA: data.DEA,
+            MACD: data.MACD,
+            K: data.K,
+            D: data.D
+        });
+
+        // 只保留最近消费的50个点
+        if(dataArr.length > 25) {
+            dataArr.shift();
+        }
+
+        // 渲染前，按 trade_date 排序（不改变 dataArr 本身）
+        var sortedArr = dataArr.slice().sort(function(a, b) {
+            return a.trade_date.localeCompare(b.trade_date);
+        });
+
+        var trade_dates = sortedArr.map(function(item) { return item.trade_date; });
+        var ma5_data = sortedArr.map(function(item) { return item.MA5; });
+        var ma10_data = sortedArr.map(function(item) { return item.MA10; });
+
+        console.log('收到test_message', data);
+
+        if(window.chart) {
+            window.chart.xAxis[0].setCategories(trade_dates, false);
+            window.chart.series[0].setData(ma5_data, false);
+            window.chart.series[1].setData(ma10_data, false);
+            window.chart.redraw();
+        }
+    });
+
+    socket.on('connected',function(){
+        console.log('connected');
+    });
+
+    socket.on('disconnect', function () {
+        console.log('disconnect');
+    });
+    </script>
+</head>
+<body>
+<div>
+    <button id="btn-ma">MA</button>
+    <button id="btn-macd">MACD</button>
+    <button id="btn-kd">KD</button>
+</div>
+<div>
+    <!-- <b>MA5: </b><b id="MA5"></b>
+    <b>MA10: </b><b id="MA10"></b> -->
+    <!-- <b>trade_date: </b><b id="trade_date"></b>
+    <b>DIF: </b><b id="DIF"></b>
+    <b>DEA: </b><b id="DEA"></b>
+    <b>MACD: </b><b id="MACD"></b> -->
+</div>
+<div id="container" style="width: 600px;height:400px;"></div>
+
+<script type="text/javascript">
+    var currentChartType = 'MA'; // 默认显示MA
+
+    function renderChart() {
+        var sortedArr = dataArr.slice().sort(function(a, b) {
+            return a.trade_date.localeCompare(b.trade_date);
+        });
+        var trade_dates = sortedArr.map(function(item) { return item.trade_date; });
+        if (currentChartType === 'MA') {
+            var ma5_data = sortedArr.map(function(item) { return item.MA5; });
+            var ma10_data = sortedArr.map(function(item) { return item.MA10; });
+            window.chart = Highcharts.chart('container', {
+                chart: { type: 'spline', animation: Highcharts.svg, marginRight: 10 },
+                title: { text: 'MA5和MA10随交易日期变化' },
+                xAxis: { categories: trade_dates, title: { text: '交易日期' } },
+                yAxis: { title: { text: '数值' } },
+                tooltip: { shared: true },
+                legend: { enabled: true },
+                series: [
+                    { name: 'MA5', data: ma5_data },
+                    { name: 'MA10', data: ma10_data }
+                ]
+            });
+        } else if (currentChartType === 'MACD') {
+            var dif_data = sortedArr.map(function(item) { return item.DIF; });
+            var dea_data = sortedArr.map(function(item) { return item.DEA; });
+            var macd_data = sortedArr.map(function(item) { return item.MACD; });
+            window.chart = Highcharts.chart('container', {
+                chart: { zoomType: 'xy', marginRight: 10 },
+                title: { text: 'MACD/DIF/DEA随交易日期变化' },
+                xAxis: { categories: trade_dates, title: { text: '交易日期' } },
+                yAxis: [{ // 主轴
+                    title: { text: 'DIF/DEA' },
+                }, { // 柱状图副轴
+                    title: { text: 'MACD' },
+                    opposite: true
+                }],
+                tooltip: { shared: true },
+                legend: { enabled: true },
+                series: [
+                    { name: 'DIF', type: 'spline', data: dif_data, yAxis: 0 },
+                    { name: 'DEA', type: 'spline', data: dea_data, yAxis: 0 },
+                    { name: 'MACD', type: 'column', data: macd_data, yAxis: 1 }
+                ]
+            });
+        } else if (currentChartType === 'KD') {
+            var k_data = sortedArr.map(function(item) { return item.K; });
+            var d_data = sortedArr.map(function(item) { return item.D; });
+            window.chart = Highcharts.chart('container', {
+                chart: { type: 'spline', animation: Highcharts.svg, marginRight: 10 },
+                title: { text: 'K线和D线随交易日期变化' },
+                xAxis: { categories: trade_dates, title: { text: '交易日期' } },
+                yAxis: { title: { text: '数值' } },
+                tooltip: { shared: true },
+                legend: { enabled: true },
+                series: [
+                    { name: 'K', data: k_data },
+                    { name: 'D', data: d_data }
+                ]
+            });
+        }
+    }
+
+    $(document).ready(function () {
+        // 按钮事件
+        $('#btn-ma').click(function() {
+            currentChartType = 'MA';
+            renderChart();
+        });
+        $('#btn-macd').click(function() {
+            currentChartType = 'MACD';
+            renderChart();
+        });
+        $('#btn-kd').click(function() {
+            currentChartType = 'KD';
+            renderChart();
+        });
+        renderChart(); // 初始化
+    });
+
+    // 修改socket.on('test_message')
+    socket.on('test_message', function(data){
+        // 检查数据
+        if (!data.trade_date || !data.MA5 || !data.MA10) {
+            console.error('数据格式有误', data);
+            return;
+        }
+        dataArr.push({
+            trade_date: data.trade_date,
+            MA5: data.MA5,
+            MA10: data.MA10,
+            DIF: data.DIF,
+            DEA: data.DEA,
+            MACD: data.MACD,
+            K: data.K,
+            D: data.D
+        });
+        // 只保留最近消费的50个点
+        if(dataArr.length > 25) {
+            dataArr.shift();
+        }
+        renderChart();
+    });
+</script>
+</body>
+</html>
